@@ -4,6 +4,7 @@ import os
 import secrets
 import sqlite3
 import threading
+import time
 from contextlib import contextmanager
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -88,7 +89,18 @@ class WebDAV:
 
     def put_verified(self, name, data):
         self.client.put(self.url(name), content=data).raise_for_status()
-        if digest(self.read(name)) != digest(data):
+        for attempt in range(5):
+            try:
+                received = self.read(name)
+                break
+            except (httpx.HTTPStatusError, httpx.RequestError) as exc:
+                transient = not isinstance(exc, httpx.HTTPStatusError) or exc.response.status_code in (404, 429, 500, 502, 503, 504)
+                if attempt == 4 or not transient:
+                    raise
+                # Some WebDAV gateways accept a PUT before the download becomes readable.
+                # Retry the read, not the upload, to avoid creating redundant cloud versions.
+                time.sleep(min(2 ** (attempt + 1), 12))
+        if digest(received) != digest(data):
             raise ValueError('上传后的文件校验失败，已保留本地原图')
 
     def test(self):

@@ -113,6 +113,46 @@ def test_webdav_download_redirect_does_not_forward_credentials():
         dav.close()
 
 
+def test_upload_waits_for_eventual_readability_without_reupload(monkeypatch):
+    methods = []
+    delays = []
+    def handle(request):
+        methods.append(request.method)
+        if request.method == 'PUT':
+            return httpx.Response(201)
+        if methods.count('GET') <= 2:
+            return httpx.Response(404)
+        return httpx.Response(200, content=b'original-image')
+    monkeypatch.setattr(storage.time, 'sleep', delays.append)
+    cfg = storage.DEFAULTS | {'webdav_url': 'https://dav.example/dav/'}
+    dav = storage.WebDAV(cfg, transport=httpx.MockTransport(handle))
+    try:
+        dav.put_verified('image.jpg', b'original-image')
+        assert methods.count('PUT') == 1
+        assert methods.count('GET') == 3
+        assert delays == [2, 4]
+    finally:
+        dav.close()
+
+
+@pytest.mark.parametrize('status,expected_reads', [(404, 5), (403, 1)])
+def test_upload_read_retries_are_bounded(monkeypatch, status, expected_reads):
+    methods = []
+    def handle(request):
+        methods.append(request.method)
+        return httpx.Response(201 if request.method == 'PUT' else status)
+    monkeypatch.setattr(storage.time, 'sleep', lambda _: None)
+    cfg = storage.DEFAULTS | {'webdav_url': 'https://dav.example/dav/'}
+    dav = storage.WebDAV(cfg, transport=httpx.MockTransport(handle))
+    try:
+        with pytest.raises(httpx.HTTPStatusError):
+            dav.put_verified('image.jpg', b'original-image')
+        assert methods.count('PUT') == 1
+        assert methods.count('GET') == expected_reads
+    finally:
+        dav.close()
+
+
 def test_encrypted_settings_and_password_preserved(store,dav):
     cfg,_,_,_=dav
     store.save_config(cfg)
