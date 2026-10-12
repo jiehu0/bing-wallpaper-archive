@@ -49,6 +49,8 @@ docker compose exec wallpaper python -m app.backfill --start 2026-07-12 --end 20
 docker compose exec wallpaper python -m app.backfill --release-zip /tmp/2023.zip --start 2023-10-12 --end 2023-12-30 --source-date-offset=-1 --apply
 ```
 
+更早的逐日图片及版权信息可从 [bing.ee123.net](https://bing.ee123.net/) 的公开历史页面与 JSON 接口核对。它是第三方历史归档站，不是 Bing 官方；早期原图可能只有 958×512 等分辨率，导入时保留原始尺寸，不放大伪装成 4K。每日自动采集仍使用 Bing 官方接口。
+
 ## API
 
 | 路径 | 用途 |
