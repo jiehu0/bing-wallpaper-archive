@@ -51,6 +51,10 @@ $('toggle-search').addEventListener('click', () => {$('filters').scrollIntoView(
 $('hero-open').addEventListener('click', () => latest && openDetail(latest));
 $('close-dialog').addEventListener('click', () => $('detail').close());
 $('detail').addEventListener('click', e => {if (e.target === $('detail')) $('detail').close();});
+$('toggle-api').addEventListener('click', () => $('api-dialog').showModal());
+$('close-api').addEventListener('click', () => $('api-dialog').close());
+// 点击遮罩关闭 API 弹窗
+$('api-dialog').addEventListener('click', e => {if (e.target === $('api-dialog')) $('api-dialog').close();});
 async function copyText(text) {
   try { await navigator.clipboard.writeText(text); return true; } catch {}
   // 非安全上下文或旧浏览器的回退方案

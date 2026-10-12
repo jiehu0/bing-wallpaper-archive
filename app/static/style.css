@@ -88,7 +88,9 @@ input[type=checkbox]{height:18px;width:18px;padding:0;accent-color:var(--accent)
 .pagination span{font-size:13px;color:#666}
 
 /* API */
-.api-section{margin-top:30px;padding:20px;border:1px solid var(--line);border-radius:var(--radius);background:#fafbfc}
+.api-dialog{width:min(680px,calc(100vw - 32px))}
+.api-dialog .api-section{padding:24px 22px 22px}
+.api-dialog .api-head{padding-right:40px}
 .api-head h2{padding-left:10px;border-left:3px solid var(--accent);line-height:1.2}
 .api-head p{margin:10px 0 0;font-size:13px;color:#666}
 .api-head code{padding:2px 6px;border-radius:4px;background:#eef1f3;word-break:break-all}
