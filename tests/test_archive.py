@@ -60,6 +60,9 @@ def test_quota_archives_oldest_first_and_stops_at_limit(store,dav):
     assert (store.root/'originals/2026-09-13.jpg').exists()
     assert (store.root/'thumbs/2026-09-12.webp').exists()
     assert len(files)==2
+    assert all(path.startswith('/dav/bing-wallpaper/2026/09/2026-09-12-') for path in files)
+    with store.db() as c:
+        assert c.execute("SELECT remote_name FROM wallpapers WHERE date='2026-09-12'").fetchone()[0].startswith('2026/09/')
     assert store.archive(cfg)==0
     assert store.status()['remote_count']==1
 
@@ -282,3 +285,24 @@ def test_unattainable_quota_preserves_previews_and_reports_error(store, dav):
     assert (store.root / 'previews/2020-01-01.webp').exists()
     with pytest.raises(ValueError, match='请提高上限'):
         store.archive(cfg)
+
+
+def test_webdav_creates_year_and_month_once_and_rejects_failed_creation():
+    calls = []
+    def handle(request):
+        calls.append((request.method, request.url.path))
+        return httpx.Response(403 if '/2027/' in request.url.path else 201)
+    cfg = storage.DEFAULTS | {'webdav_url': 'https://dav.example/dav/'}
+    dav = storage.WebDAV(cfg, transport=httpx.MockTransport(handle))
+    try:
+        dav.ensure_parent('2026/01/image.jpg')
+        dav.ensure_parent('2026/01/another.jpg')
+        dav.ensure_parent('2026/02/image.jpg')
+        assert calls == [('MKCOL', '/dav/bing-wallpaper/2026/'),
+                         ('MKCOL', '/dav/bing-wallpaper/2026/01/'),
+                         ('MKCOL', '/dav/bing-wallpaper/2026/02/')]
+        with pytest.raises(httpx.HTTPStatusError):
+            dav.ensure_parent('2027/01/image.jpg')
+        assert '2027' not in dav.collections
+    finally:
+        dav.close()

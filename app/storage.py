@@ -55,6 +55,7 @@ class WebDAV:
             raise ValueError('请填写独立的 WebDAV 目录，例如 bing-wallpaper')
         self.base = config['webdav_url'].rstrip('/') + '/'
         self.directory = '/'.join(parts)
+        self.collections = set()
         self.client = httpx.Client(auth=(config['webdav_username'], config['webdav_password']),
                                    timeout=httpx.Timeout(60, connect=15), follow_redirects=False,
                                    transport=transport, trust_env=False)
@@ -75,6 +76,19 @@ class WebDAV:
             if r.status_code not in (200, 201, 204, 405):
                 r.raise_for_status()
         self.client.request('PROPFIND', self.url(), headers={'Depth': '0'}).raise_for_status()
+
+    def ensure_parent(self, name):
+        parts = name.split('/')[:-1]
+        if any(part in ('', '.', '..') or '\\' in part for part in parts):
+            raise ValueError('归档目录格式不正确')
+        for depth in range(1, len(parts) + 1):
+            path = '/'.join(parts[:depth])
+            if path in self.collections:
+                continue
+            response = self.client.request('MKCOL', self.url(path) + '/')
+            if response.status_code not in (200, 201, 204, 405):
+                response.raise_for_status()
+            self.collections.add(path)
 
     def read(self, name):
         chunks, size = [], 0
@@ -329,12 +343,13 @@ class Store:
                 data = path.read_bytes()
                 if digest(data) != row['sha256']:
                     raise ValueError('本地原图校验失败，归档已停止')
-                name = row['remote_name'] or row['date'] + '-' + row['sha256'][:16] + '.jpg'
+                name = row['remote_name'] or row['date'][:4] + '/' + row['date'][5:7] + '/' + row['date'] + '-' + row['sha256'][:16] + '.jpg'
                 if row['remote_name']:
                     # Existing backups can be reused, but must be verified before local removal.
                     if digest(dav.read(name)) != row['sha256']:
                         raise ValueError('远端文件校验失败，已保留本地原图')
                 else:
+                    dav.ensure_parent(name)
                     dav.put_verified(name, data)
                     dav.put_verified(name + '.json', json.dumps(row, ensure_ascii=False).encode())
                     with self.db() as c:
