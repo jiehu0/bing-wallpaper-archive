@@ -51,3 +51,16 @@ def test_release_zip_matches_image_identity_and_startdate(tmp_path):
         entries[0]['urlbase'] = '/th?id=OHR.Wrong_ZH-CN123'
         with pytest.raises(ValueError, match='缺少所需原图'):
             plan_release_import(entries, existing, date(2023,10,12), date(2023,10,12), -1, z)
+
+
+def test_release_deduplicates_identical_rows_and_tracks_numeric_id_variant(tmp_path):
+    import zipfile
+    from app.backfill import plan_release_import
+    entry = {'enddate': '20250821', 'urlbase': '/th?id=OHR.WheatearBird_ZH-CN2663965839'}
+    with zipfile.ZipFile(tmp_path / 'fixture.zip', 'w') as z:
+        z.writestr('2025/20250821_OHR.WheatearBird_ZH-CN3286472001.jpg', b'fixture-image')
+    with zipfile.ZipFile(tmp_path / 'fixture.zip') as z:
+        plan, _ = plan_release_import([entry, entry.copy()], [], date(2025,8,20), date(2025,8,20), -1, z)
+        assert len(plan) == 1
+        assert plan[0]['source_url'].endswith('3286472001_UHD.jpg')
+        assert plan[0]['metadata_source_url'].endswith('2663965839_UHD.jpg')

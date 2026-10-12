@@ -2,6 +2,7 @@
 import argparse
 import io
 import json
+import re
 import time
 import zipfile
 from pathlib import Path
@@ -57,6 +58,7 @@ def plan_import(entries, existing, start, end, offset):
 
 def plan_release_import(entries, existing, start, end, offset, archive):
     normalized, originals = [], {}
+    members = archive.namelist()
     for entry in entries:
         source_day = datetime.strptime(entry['enddate'], '%Y%m%d').date().isoformat()
         base = entry['urlbase']
@@ -65,6 +67,10 @@ def plan_release_import(entries, existing, start, end, offset, archive):
             if start <= target_day <= end:
                 raise ValueError('历史索引包含无法识别的 Bing 图片地址')
             continue  # Malformed records outside the requested period cannot affect this import.
+        if source_day in originals:
+            if entry == originals[source_day]:
+                continue  # The upstream aggregate may contain identical duplicate rows.
+            raise ValueError('历史索引包含冲突日期：' + source_day)
         normalized.append({'date': source_day, 'caption': entry.get('title'),
                            'copyright': entry.get('copyright', ''),
                            'bing_url': 'https://www.bing.com' + base + '_UHD.jpg'})
@@ -77,7 +83,16 @@ def plan_release_import(entries, existing, start, end, offset, archive):
         try:
             info = archive.getinfo(member)
         except KeyError:
-            raise ValueError('压缩包缺少所需原图：' + item['date']) from None
+            # Bing sometimes changes the numeric market ID of the same named daily image.
+            # Accept only one ZIP member with the exact date and OHR scene name.
+            prefix = member.rsplit('_ZH-CN', 1)[0] + '_ZH-CN'
+            variants = [name for name in members if re.fullmatch(re.escape(prefix) + r'[0-9]+\.jpg', name)]
+            if len(variants) != 1:
+                raise ValueError('压缩包缺少所需原图：' + item['date']) from None
+            member = variants[0]
+            info = archive.getinfo(member)
+            item['metadata_source_url'] = item['source_url']
+            item['source_url'] = 'https://www.bing.com/th?id=' + member.split('/')[-1].split('_', 1)[1][:-4] + '_UHD.jpg'
         if not 0 < info.file_size <= MAX_IMAGE:
             raise ValueError('压缩包原图大小异常：' + item['date'])
         item.update(member=member, copyrightlink=source.get('copyrightlink', ''), url=None)
@@ -136,7 +151,8 @@ def main():
         report = {'source': index_url, 'source_date_offset': args.source_date_offset,
                   'start': args.start.isoformat(), 'end': args.end.isoformat(),
                   'aligned_existing': aligned, 'planned': len(items), 'started_at': now(),
-                  'added': [], 'failed': [], 'download_bytes': 0}
+                  'added': [], 'failed': [], 'download_bytes': 0,
+                  'source_variants': [{'date': x['date'], 'metadata_source_url': x['metadata_source_url'], 'source_url': x['source_url']} for x in items if 'metadata_source_url' in x]}
         print(json.dumps({'plan': {k: v for k, v in report.items() if k not in ('added', 'failed')}}, ensure_ascii=False), flush=True)
         if not args.apply:
             if archive:
