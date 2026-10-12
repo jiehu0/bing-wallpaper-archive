@@ -23,11 +23,14 @@ async function gallery() {
   w.document.getElementById('toggle-api').click();assert.equal(w.document.getElementById('api-dialog').open,true);
   let copied=null;Object.defineProperty(w.navigator,'clipboard',{value:{writeText:async t=>{copied=t;}},configurable:true});
   const copyButtons=w.document.querySelectorAll('.api-copy');
-  assert.equal(copyButtons.length,4);
-  assert.equal(copyButtons[1].querySelector('code').textContent,'https://wallpaper.boyweb.net/img/4k');
-  copyButtons[1].click();await tick();
+  assert.equal(copyButtons.length,6);
+  assert.equal(copyButtons[2].querySelector('code').textContent,'https://wallpaper.boyweb.net/img/4k');
+  copyButtons[2].click();await tick();
   assert.equal(copied,'https://wallpaper.boyweb.net/img/4k');
-  assert.equal(copyButtons[1].querySelector('.sr-only').textContent,'已复制');assert.ok(copyButtons[1].classList.contains('copied'));
+  assert.equal(copyButtons[2].querySelector('.sr-only').textContent,'已复制');assert.ok(copyButtons[2].classList.contains('copied'));
+  assert.ok(w.document.querySelector('.api-toast').classList.contains('show'));
+  copyButtons[5].click();await tick();
+  assert.equal(copied,'<img src="https://wallpaper.boyweb.net/img/" />');
   w.document.getElementById('close-api').click();assert.equal(w.document.getElementById('api-dialog').open,false);
   w.document.getElementById('search').value='海岸';
   w.document.getElementById('filters').dispatchEvent(new w.Event('submit',{cancelable:true}));await tick();

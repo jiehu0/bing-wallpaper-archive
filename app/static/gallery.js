@@ -29,6 +29,7 @@ async function load() {
     const response = await fetch('/api/wallpapers?' + params); if (!response.ok) throw new Error();
     const data = await response.json(); if (current !== generation) return;
     $('archive-count').textContent = String(data.archive_count).padStart(3, '0');
+    $('api-count').textContent = data.archive_count;
     $('result-count').textContent = ` / ${data.total}`;
     latest = data.latest;
     if (latest) {
@@ -62,23 +63,32 @@ async function copyText(text) {
   area.style.position = 'fixed'; area.style.opacity = '0'; document.body.append(area); area.select();
   let ok = false; try { ok = document.execCommand('copy'); } catch {} area.remove(); return ok;
 }
+// API 弹窗：每条链接都是按钮，点击即复制；“调用方式”一行复制完整的 <img> 代码
+const copyIcon = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
+const checkIcon = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>';
+const toast = document.createElement('div'); toast.className = 'api-toast'; toast.setAttribute('role', 'status'); toast.setAttribute('aria-live', 'polite');
+$('api-dialog').append(toast);
+let toastTimer;
+function showToast(text, ok) {
+  toast.textContent = text; toast.classList.toggle('error', !ok); toast.classList.add('show');
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => toast.classList.remove('show'), 1600);
+}
 document.querySelectorAll('.api-copy').forEach(button => {
   const url = location.origin + button.dataset.path;
-  button.querySelector('code').textContent = url;
-  const icon = button.querySelector('.api-icon');
-  const status = button.querySelector('.sr-only');
-  const copyIcon = icon.innerHTML;
-  // 复制成功后短暂显示对勾图标
-  const checkIcon = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>';
+  const text = button.dataset.snippet === 'img' ? `<img src="${url}" />` : url;
+  const code = document.createElement('code'); code.textContent = text;
+  const icon = document.createElement('span'); icon.className = 'api-icon'; icon.setAttribute('aria-hidden', 'true'); icon.innerHTML = copyIcon;
+  const status = document.createElement('span'); status.className = 'sr-only';
+  button.replaceChildren(code, icon, status); button.title = '点击复制';
   let timer;
   button.addEventListener('click', async () => {
-    const ok = await copyText(url);
+    const ok = await copyText(text);
     status.textContent = ok ? '已复制' : '复制失败，请手动选择';
+    showToast(ok ? '已复制到剪贴板' : '复制失败，请手动选择', ok);
     if (ok) icon.innerHTML = checkIcon;
     button.classList.toggle('copied', ok);
-    button.title = ok ? '已复制' : '复制失败';
     clearTimeout(timer); timer = setTimeout(() => {
-      icon.innerHTML = copyIcon; status.textContent = ''; button.title = '复制链接'; button.classList.remove('copied');
+      icon.innerHTML = copyIcon; status.textContent = ''; button.classList.remove('copied');
     }, 1600);
   });
 });
