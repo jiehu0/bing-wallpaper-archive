@@ -61,7 +61,10 @@ def plan_release_import(entries, existing, start, end, offset, archive):
         source_day = datetime.strptime(entry['enddate'], '%Y%m%d').date().isoformat()
         base = entry['urlbase']
         if not base.startswith('/th?id=OHR.') or '/' in base[len('/th?id='):]:
-            raise ValueError('历史索引包含无法识别的 Bing 图片地址')
+            target_day = date.fromisoformat(source_day) + timedelta(days=offset)
+            if start <= target_day <= end:
+                raise ValueError('历史索引包含无法识别的 Bing 图片地址')
+            continue  # Malformed records outside the requested period cannot affect this import.
         normalized.append({'date': source_day, 'caption': entry.get('title'),
                            'copyright': entry.get('copyright', ''),
                            'bing_url': 'https://www.bing.com' + base + '_UHD.jpg'})

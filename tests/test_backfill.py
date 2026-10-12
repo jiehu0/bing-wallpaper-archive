@@ -37,6 +37,7 @@ def test_release_zip_matches_image_identity_and_startdate(tmp_path):
     entries = [{'enddate': '20231013', 'urlbase': '/th?id=OHR.Coast_ZH-CN123',
                 'title': '海岸', 'copyright': 'Photo', 'copyrightlink': 'https://www.bing.com/search?q=coast'},
                {'enddate': '20261005', 'urlbase': '/th?id=OHR.Recent_ZH-CN456'}]
+    entries.append({'enddate': '20180803', 'urlbase': '/th?id=OHRBadLegacyEntry'})
     existing = [{'date': '2026-10-04', 'source_url': 'https://www.bing.com/th?id=OHR.Recent_ZH-CN456_UHD.jpg'}]
     with zipfile.ZipFile(tmp_path / 'fixture.zip', 'w') as z:
         z.writestr('2023/20231013_OHR.Coast_ZH-CN123.jpg', b'fixture-image')
