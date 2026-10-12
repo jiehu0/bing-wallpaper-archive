@@ -44,8 +44,8 @@ async function admin() {
     let data={};
     if(url.endsWith('/settings')) {
       if(opts.method==='PUT')saveBody=JSON.parse(opts.body);
-      data={retention_days:30,webdav_enabled:false,webdav_url:'',webdav_directory:'bing-wallpaper',webdav_username:'',password_saved:true};
-    } else if(url.endsWith('/status'))data={total:8,local_count:8,remote_count:0,local_bytes:1000,running:false,last_job:null};
+      data={storage_limit_gb:40,webdav_enabled:false,webdav_url:'',webdav_directory:'bing-wallpaper',webdav_username:'',password_saved:true};
+    } else if(url.endsWith('/status'))data={total:8,local_count:8,remote_count:0,local_bytes:1000,storage_bytes:2000,storage_limit_bytes:40e9,running:false,last_job:null};
     else if(url.endsWith('/webdav/test')){testBody=JSON.parse(opts.body);data={ok:true,steps:['目录访问正常','上传成功','下载与内容校验通过','临时文件已删除']};}
     return {ok:true,status:200,json:async()=>data};
   };
@@ -55,7 +55,7 @@ async function admin() {
   w.document.getElementById('webdav_password').value=' secret with spaces ';
   w.document.getElementById('test-webdav').click();await tick();
   assert.equal(testBody.webdav_password,' secret with spaces ');
-  assert.equal(testBody.retention_days,30);
+  assert.equal(testBody.storage_limit_gb,40);
   assert.ok(w.document.getElementById('test-result').textContent.includes('测试通过'));
   assert.ok(w.document.getElementById('test-result').textContent.includes('临时文件已删除'));
   assert.equal(saveBody,null,'Test button must not save settings');

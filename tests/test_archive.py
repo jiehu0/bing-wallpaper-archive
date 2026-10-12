@@ -1,6 +1,6 @@
 import io
 import os
-from datetime import date
+import json
 
 import httpx
 import pytest
@@ -51,23 +51,25 @@ def add(store, day):
     store.ingest(day,{'title':'海岸','copyright':'测试版权'},'https://www.bing.com/example.jpg',photo())
 
 
-def test_retention_and_verified_archive(store,dav):
+def test_quota_archives_oldest_first_and_stops_at_limit(store,dav):
     cfg,files,_,_=dav
-    add(store,'2026-09-12');add(store,'2026-09-13');add(store,'2026-10-12')
-    assert store.archive(cfg,today=date(2026,10,12))==1
+    add(store,'2026-10-12');add(store,'2026-09-12');add(store,'2026-09-13')
+    cfg['storage_limit_gb'] = (store.storage_bytes() - len(photo())) / storage.GB
+    assert store.archive(cfg)==1
     assert not (store.root/'originals/2026-09-12.jpg').exists()
     assert (store.root/'originals/2026-09-13.jpg').exists()
     assert (store.root/'thumbs/2026-09-12.webp').exists()
     assert len(files)==2
-    assert store.archive(cfg,today=date(2026,10,12))==0
+    assert store.archive(cfg)==0
     assert store.status()['remote_count']==1
 
 
 @pytest.mark.parametrize('failure',['corrupt','fail_put'])
 def test_remote_failure_preserves_original(store,dav,failure):
     cfg,_,state,_=dav;state[failure]=True;add(store,'2026-08-01')
+    cfg['storage_limit_gb'] = (store.storage_bytes() - 1) / storage.GB
     with pytest.raises((ValueError,httpx.HTTPStatusError)):
-        store.archive(cfg,today=date(2026,10,12))
+        store.archive(cfg)
     assert (store.root/'originals/2026-08-01.jpg').read_bytes()==photo()
     assert store.status()['local_count']==1
     assert store.status()['remote_count']==0
@@ -157,14 +159,16 @@ def test_encrypted_settings_and_password_preserved(store,dav):
     cfg,_,_,_=dav
     store.save_config(cfg)
     assert b'secret' not in (store.root/'settings.enc').read_bytes()
-    store.save_config({'webdav_password':'','retention_days':31})
+    store.save_config({'webdav_password':'','storage_limit_gb':31})
     assert store.config()['webdav_password']=='secret'
     assert (store.root/'settings.enc').stat().st_mode & 0o777==0o600
 
 
 def test_archive_target_cannot_change_after_eviction(store,dav):
-    cfg,_,_,_=dav;store.save_config(cfg);add(store,'2026-08-01')
-    store.archive(today=date(2026,10,12))
+    cfg,_,_,_=dav;add(store,'2026-08-01')
+    cfg['storage_limit_gb'] = (store.storage_bytes() - 1) / storage.GB
+    store.save_config(cfg)
+    store.archive()
     with pytest.raises(ValueError,match='不能直接更换'):
         store.save_config({'webdav_directory':'elsewhere'})
 
@@ -175,7 +179,7 @@ def test_recover_interruption_after_unlink(store,dav):
         c.execute("UPDATE wallpapers SET remote_name='already.jpg' WHERE date='2026-08-01'")
     files['/dav/bing-wallpaper/already.jpg']=photo()
     (store.root/'originals/2026-08-01.jpg').unlink()
-    assert store.archive(cfg,today=date(2026,10,12))==1
+    assert store.archive(cfg)==1
     assert store.status()['local_count']==0
 
 
@@ -202,7 +206,7 @@ def test_api_auth_filters_and_image_integrity(tmp_path,monkeypatch):
         assert client.post('/api/admin/login',json={'password':'testpassword'}).status_code==200
         assert client.get('/api/admin/settings').status_code==200
         assert 'webdav_password' not in client.get('/api/admin/settings').json()
-        assert client.put('/api/admin/settings',json={'retention_days':0}).status_code==400
+        assert client.put('/api/admin/settings',json={'storage_limit_gb':0}).status_code==400
         assert client.put('/api/admin/settings',json={},headers={'Origin':'https://evil.example'}).status_code==403
         assert client.get('/api/wallpapers?q=海岸').json()['total']==1
         assert client.get('/api/wallpapers?month=2026-09').json()['total']==0
@@ -226,3 +230,55 @@ def test_api_auth_filters_and_image_integrity(tmp_path,monkeypatch):
         assert client.post('/api/admin/webdav/test',json={'webdav_url':'bad'}).json()['ok'] is False
         assert client.post('/api/admin/logout').status_code==200
         assert client.get('/api/admin/settings').status_code==401
+
+
+def test_old_photos_kept_below_quota_without_contacting_webdav(store, dav):
+    cfg, _, _, methods = dav
+    add(store, '2020-01-01')
+    cfg['storage_limit_gb'] = store.storage_bytes() / storage.GB
+    assert store.archive(cfg) == 0
+    assert store.status()['local_count'] == 1
+    assert methods == []
+    expected = sum(p.stat().st_size for folder in ('originals', 'thumbs', 'previews') for p in (store.root / folder).iterdir())
+    assert store.status()['storage_bytes'] == expected > store.status()['local_bytes']
+
+
+def test_legacy_settings_migrate_without_losing_credentials(store, dav):
+    cfg, _, _, _ = dav
+    cfg.pop('storage_limit_gb')
+    cfg['retention_days'] = 90
+    store.atomic(store.root / 'settings.enc', store.cipher.encrypt(json.dumps(cfg).encode()))
+    assert store.config()['storage_limit_gb'] == 40
+    assert 'retention_days' not in store.config()
+    store.save_config({'storage_limit_gb': 40})
+    assert store.config()['webdav_password'] == 'secret'
+
+
+@pytest.mark.parametrize('limit', [0, -1, True, '40', None, float('nan'), float('inf'), 1000001])
+def test_invalid_quota_rejected(store, limit):
+    with pytest.raises(ValueError, match='容量上限'):
+        store.candidate({'storage_limit_gb': limit})
+
+
+def test_existing_verified_remote_copy_is_reused(store, dav):
+    cfg, files, _, methods = dav
+    add(store, '2020-01-01')
+    with store.db() as c:
+        c.execute("UPDATE wallpapers SET remote_name='2020/01/already.jpg'")
+    files['/dav/bing-wallpaper/2020/01/already.jpg'] = photo()
+    cfg['storage_limit_gb'] = (store.storage_bytes() - 1) / storage.GB
+    assert store.archive(cfg) == 1
+    assert 'PUT' not in methods
+    assert store.status()['local_count'] == 0
+
+
+def test_unattainable_quota_preserves_previews_and_reports_error(store, dav):
+    cfg, _, _, _ = dav
+    add(store, '2020-01-01')
+    cfg['storage_limit_gb'] = 1 / storage.GB
+    with pytest.raises(ValueError, match='请提高上限'):
+        store.archive(cfg)
+    assert store.status()['local_count'] == 0
+    assert (store.root / 'previews/2020-01-01.webp').exists()
+    with pytest.raises(ValueError, match='请提高上限'):
+        store.archive(cfg)

@@ -1,5 +1,5 @@
 const $ = id => document.getElementById(id);
-const fields = ['retention_days','webdav_enabled','webdav_url','webdav_directory','webdav_username','webdav_password'];
+const fields = ['storage_limit_gb','webdav_enabled','webdav_url','webdav_directory','webdav_username','webdav_password'];
 async function api(path, method = 'GET', body) {
   const response = await fetch('/api/admin/' + path, {method, headers: {'Content-Type':'application/json'}, ...(body === undefined ? {} : {body: JSON.stringify(body)})});
   const data = await response.json();
@@ -9,12 +9,12 @@ async function api(path, method = 'GET', body) {
   }
   return data;
 }
-function payload() {const data = {}; for (const key of fields) data[key] = key === 'webdav_enabled' ? $(key).checked : key === 'retention_days' ? Number($(key).value) : key === 'webdav_password' ? $(key).value : $(key).value.trim(); return data;}
-function bytes(n) {return `${(n / 1048576).toFixed(1)} MB`;}
+function payload() {const data = {}; for (const key of fields) data[key] = key === 'webdav_enabled' ? $(key).checked : key === 'storage_limit_gb' ? Number($(key).value) : key === 'webdav_password' ? $(key).value : $(key).value.trim(); return data;}
+function bytes(n) {return `${(n / 1e9).toFixed(2)} GB`;}
 async function refreshStatus() {
   try {
     const s = await api('status');
-    const cards = [['已收录',s.total+' 张'],['本地原图',s.local_count+' 张'],['WebDAV 原图',s.remote_count+' 张'],['本地原图占用',bytes(s.local_bytes)]];
+    const cards = [['已收录',s.total+' 张'],['本地原图',s.local_count+' 张'],['WebDAV 原图',s.remote_count+' 张'],['本地壁纸占用 / 上限',bytes(s.storage_bytes)+' / '+bytes(s.storage_limit_bytes)]];
     $('stats').replaceChildren(...cards.map(([label,value]) => {const e=document.createElement('div'); const p=document.createElement('p');p.textContent=label;const b=document.createElement('strong');b.textContent=value;e.append(p,b);return e;}));
     $('sync').disabled = s.running;
     const job = s.last_job;

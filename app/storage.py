@@ -1,12 +1,13 @@
 import hashlib
 import json
+import math
 import os
 import secrets
 import sqlite3
 import threading
 import time
 from contextlib import contextmanager
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 from urllib.parse import quote, urlsplit
 from zoneinfo import ZoneInfo
@@ -17,7 +18,8 @@ from PIL import Image
 
 TZ = ZoneInfo('Asia/Shanghai')
 MAX_IMAGE = 32 * 1024 * 1024
-DEFAULTS = {'retention_days': 30, 'webdav_enabled': False, 'webdav_url': '',
+GB = 1_000_000_000
+DEFAULTS = {'storage_limit_gb': 40, 'webdav_enabled': False, 'webdav_url': '',
             'webdav_directory': 'bing-wallpaper', 'webdav_username': '', 'webdav_password': ''}
 
 
@@ -169,15 +171,18 @@ class Store:
     def config(self):
         with self.config_lock:
             path = self.root / 'settings.enc'
-            return DEFAULTS | (json.loads(self.cipher.decrypt(path.read_bytes())) if path.exists() else {})
+            saved = json.loads(self.cipher.decrypt(path.read_bytes())) if path.exists() else {}
+            # Legacy day-based settings migrate to the default quota without changing credentials.
+            return DEFAULTS | {k: v for k, v in saved.items() if k in DEFAULTS}
 
     def candidate(self, patch):
         cfg = self.config()
         for key in DEFAULTS:
             if key in patch and not (key == 'webdav_password' and patch[key] == ''):
                 cfg[key] = patch[key]
-        if not isinstance(cfg['retention_days'], int) or not 1 <= cfg['retention_days'] <= 3650:
-            raise ValueError('本地保留天数应在 1 到 3650 之间')
+        limit = cfg['storage_limit_gb']
+        if isinstance(limit, bool) or not isinstance(limit, (int, float)) or not math.isfinite(limit) or not 0 < limit <= 1_000_000:
+            raise ValueError('本地容量上限应为大于 0 且不超过 1000000 的 GB 数值')
         for key in ('webdav_url', 'webdav_directory', 'webdav_username', 'webdav_password'):
             if not isinstance(cfg[key], str) or len(cfg[key]) > 4096:
                 raise ValueError('WebDAV 配置格式不正确')
@@ -213,6 +218,18 @@ class Store:
         finally:
             temp.unlink(missing_ok=True)
 
+    def storage_bytes(self):
+        # Count the actual managed image files, including persistent previews/thumbnails.
+        total = 0
+        for folder in ('originals', 'thumbs', 'previews'):
+            for path in (self.root / folder).iterdir():
+                try:
+                    if path.is_file():
+                        total += path.stat().st_size
+                except FileNotFoundError:
+                    pass  # An atomic write/archive may finish during this scan.
+        return total
+
     def status(self):
         with self.db() as c:
             totals = dict(c.execute('SELECT COUNT(*) total, COALESCE(SUM(local),0) local_count, '
@@ -220,7 +237,8 @@ class Store:
                                    'COALESCE(SUM(CASE WHEN remote_name IS NOT NULL THEN 1 ELSE 0 END),0) remote_count '
                                    'FROM wallpapers').fetchone())
             row = c.execute("SELECT value FROM meta WHERE key='last_job'").fetchone()
-        return totals | {'running': self.lock.locked(), 'last_job': json.loads(row[0]) if row else None}
+        return totals | {'storage_bytes': self.storage_bytes(),
+                         'storage_limit_bytes': int(self.config()['storage_limit_gb'] * GB), 'running': self.lock.locked(), 'last_job': json.loads(row[0]) if row else None}
 
     def record_job(self, result):
         with self.db() as c:
@@ -279,42 +297,55 @@ class Store:
                        item.get('copyright', ''), item.get('copyrightlink', ''), url,
                        digest(data), len(data), width, height, now()))
 
-    def archive(self, config=None, today=None):
+    def archive(self, config=None):
         cfg = config or self.config()
         if not cfg['webdav_enabled']:
             return 0
-        today = today or datetime.now(TZ).date()
-        # Includes today: with 30 days, the earliest retained day is today - 29.
-        cutoff = (today - timedelta(days=cfg['retention_days'] - 1)).isoformat()
+        limit = int(cfg['storage_limit_gb'] * GB)
         with self.db() as c:
-            rows = [dict(r) for r in c.execute('SELECT * FROM wallpapers WHERE date < ? AND local=1', (cutoff,))]
+            rows = [dict(r) for r in c.execute('SELECT * FROM wallpapers WHERE local=1 ORDER BY date ASC')]
+        # Recover interrupted removals even when their freed space put us below the quota.
+        missing = [row for row in rows if not (self.root / 'originals' / (row['date'] + '.jpg')).exists()]
+        if not missing and self.storage_bytes() <= limit:
+            return 0
         dav, count = WebDAV(cfg), 0
         try:
             dav.ensure_directory()
+            for row in missing:
+                if not row['remote_name']:
+                    raise ValueError('本地原图缺失且没有远端归档，归档已停止')
+                if digest(dav.read(row['remote_name'])) != row['sha256']:
+                    raise ValueError('远端文件校验失败，归档已停止')
+                with self.db() as c:
+                    c.execute('UPDATE wallpapers SET local=0 WHERE date=?', (row['date'],))
+                count += 1
+            missing_dates = {row['date'] for row in missing}
             for row in rows:
-                path = self.root / 'originals' / (row['date'] + '.jpg')
-                if not path.exists() and row['remote_name']:
-                    # Recover a crash after unlink but before the local flag was committed.
-                    if digest(dav.read(row['remote_name'])) != row['sha256']:
-                        raise ValueError('远端文件校验失败，归档已停止')
-                    with self.db() as c:
-                        c.execute('UPDATE wallpapers SET local=0 WHERE date=?', (row['date'],))
-                    count += 1
+                if self.storage_bytes() <= limit:
+                    break
+                if row['date'] in missing_dates:
                     continue
+                path = self.root / 'originals' / (row['date'] + '.jpg')
                 data = path.read_bytes()
                 if digest(data) != row['sha256']:
                     raise ValueError('本地原图校验失败，归档已停止')
-                name = row['date'] + '-' + row['sha256'][:16] + '.jpg'
-                dav.put_verified(name, data)
-                dav.put_verified(name + '.json', json.dumps(row, ensure_ascii=False).encode())
-                with self.db() as c:
-                    c.execute('UPDATE wallpapers SET remote_name=? WHERE date=?', (name, row['date']))
+                name = row['remote_name'] or row['date'] + '-' + row['sha256'][:16] + '.jpg'
+                if row['remote_name']:
+                    # Existing backups can be reused, but must be verified before local removal.
+                    if digest(dav.read(name)) != row['sha256']:
+                        raise ValueError('远端文件校验失败，已保留本地原图')
+                else:
+                    dav.put_verified(name, data)
+                    dav.put_verified(name + '.json', json.dumps(row, ensure_ascii=False).encode())
+                    with self.db() as c:
+                        c.execute('UPDATE wallpapers SET remote_name=? WHERE date=?', (name, row['date']))
                 # Commit remote reference before removing local data; retries remain idempotent.
                 path.unlink()
                 with self.db() as c:
                     c.execute('UPDATE wallpapers SET local=0 WHERE date=?', (row['date'],))
                 count += 1
-            # Metadata and credentials remain local; remote manifest files carry per-image provenance.
+            if self.storage_bytes() > limit:
+                raise ValueError('可归档原图已全部归档，预览图等仍超过容量上限，请提高上限')
         finally:
             dav.close()
         return count

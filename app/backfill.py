@@ -3,6 +3,8 @@ import argparse
 import io
 import json
 import time
+import zipfile
+from pathlib import Path
 from datetime import date, datetime, timedelta
 from urllib.parse import parse_qs, urlsplit
 
@@ -12,6 +14,7 @@ from PIL import Image
 from .storage import MAX_IMAGE, Store, TZ, now, safe_error
 
 INDEX = 'https://bing.npanuhin.me/CN-zh.json'
+RELEASE_INDEX = 'https://raw.githubusercontent.com/Zhu-junwei/bing-wallpaper-archive/master/Bing_zh-CN_all.json'
 
 
 def image_id(url):
@@ -52,6 +55,42 @@ def plan_import(entries, existing, start, end, offset):
     return sorted(items, key=lambda x: x['date'], reverse=True), aligned
 
 
+def plan_release_import(entries, existing, start, end, offset, archive):
+    normalized, originals = [], {}
+    for entry in entries:
+        source_day = datetime.strptime(entry['enddate'], '%Y%m%d').date().isoformat()
+        base = entry['urlbase']
+        if not base.startswith('/th?id=OHR.') or '/' in base[len('/th?id='):]:
+            raise ValueError('历史索引包含无法识别的 Bing 图片地址')
+        normalized.append({'date': source_day, 'caption': entry.get('title'),
+                           'copyright': entry.get('copyright', ''),
+                           'bing_url': 'https://www.bing.com' + base + '_UHD.jpg'})
+        originals[source_day] = entry
+    items, aligned = plan_import(normalized, existing, start, end, offset)
+    for item in items:
+        source = originals[item['source_date']]
+        stamp = source['enddate']
+        member = stamp[:4] + '/' + stamp + '_' + source['urlbase'].split('id=')[1] + '.jpg'
+        try:
+            info = archive.getinfo(member)
+        except KeyError:
+            raise ValueError('压缩包缺少所需原图：' + item['date']) from None
+        if not 0 < info.file_size <= MAX_IMAGE:
+            raise ValueError('压缩包原图大小异常：' + item['date'])
+        item.update(member=member, copyrightlink=source.get('copyrightlink', ''), url=None)
+    return items, aligned
+
+
+def validate_image(data):
+    if len(data) > MAX_IMAGE:
+        raise ValueError('历史图片超过允许大小')
+    with Image.open(io.BytesIO(data)) as image:
+        image.verify()
+        if image.width < 1280 or image.height < 720:
+            raise ValueError('历史图片分辨率异常，已跳过')
+    return bytes(data)
+
+
 def download(client, url):
     data = bytearray()
     with client.stream('GET', url) as response:
@@ -60,11 +99,7 @@ def download(client, url):
             data.extend(chunk)
             if len(data) > MAX_IMAGE:
                 raise ValueError('历史图片超过允许大小')
-    with Image.open(io.BytesIO(data)) as image:
-        image.verify()
-        if image.width < 1280 or image.height < 720:
-            raise ValueError('历史图片分辨率异常，已跳过')
-    return bytes(data)
+    return validate_image(data)
 
 
 def main():
@@ -73,6 +108,7 @@ def main():
     parser.add_argument('--start', type=date.fromisoformat, required=True)
     parser.add_argument('--end', type=date.fromisoformat, required=True)
     parser.add_argument('--source-date-offset', type=int, choices=(-1, 0, 1), required=True)
+    parser.add_argument('--release-zip', type=Path, help='从 Zhu-junwei 的年度发行压缩包导入（可用包含所需原图的子集压缩包）')
     parser.add_argument('--apply', action='store_true')
     parser.add_argument('--limit', type=int, default=0)
     args = parser.parse_args()
@@ -84,27 +120,37 @@ def main():
         existing = [dict(r) for r in c.execute('SELECT date,source_url FROM wallpapers')]
     with httpx.Client(timeout=60, follow_redirects=True, trust_env=False,
                       headers={'User-Agent': 'BoywebWallpaperArchive/1.0 (historical backfill)'}) as client:
-        response = client.get(INDEX)
+        index_url = RELEASE_INDEX if args.release_zip else INDEX
+        response = client.get(index_url)
         response.raise_for_status()
-        items, aligned = plan_import(response.json(), existing, args.start, args.end, args.source_date_offset)
+        archive = zipfile.ZipFile(args.release_zip) if args.release_zip else None
+        if archive:
+            items, aligned = plan_release_import(response.json()['images'], existing, args.start, args.end, args.source_date_offset, archive)
+        else:
+            items, aligned = plan_import(response.json(), existing, args.start, args.end, args.source_date_offset)
         if args.limit:
             items = items[:args.limit]
-        report = {'source': INDEX, 'source_date_offset': args.source_date_offset,
+        report = {'source': index_url, 'source_date_offset': args.source_date_offset,
                   'start': args.start.isoformat(), 'end': args.end.isoformat(),
                   'aligned_existing': aligned, 'planned': len(items), 'started_at': now(),
                   'added': [], 'failed': [], 'download_bytes': 0}
         print(json.dumps({'plan': {k: v for k, v in report.items() if k not in ('added', 'failed')}}, ensure_ascii=False), flush=True)
         if not args.apply:
+            if archive:
+                archive.close()
             return
         for entry in items:
             try:
                 with store.db() as c:
                     if c.execute('SELECT 1 FROM wallpapers WHERE date=?', (entry['date'],)).fetchone():
                         continue
-                data = download(client, entry['url'])
+                data = validate_image(archive.read(entry['member'])) if archive else download(client, entry['url'])
                 store.ingest(entry['date'], entry, entry['source_url'], data)
                 report['added'].append(entry['date'])
                 report['download_bytes'] += len(data)
+                cfg = store.config()
+                if cfg['webdav_enabled'] and store.storage_bytes() > cfg['storage_limit_gb'] * 1_000_000_000:
+                    store.archive(cfg)
                 print(json.dumps({'added': entry['date'], 'completed': len(report['added']), 'total': len(items)}), flush=True)
             except Exception as exc:
                 report['failed'].append({'date': entry['date'], 'error': safe_error(exc)})
@@ -113,6 +159,8 @@ def main():
                 report['updated_at'] = now()
                 store.atomic(store.root / 'backfill-latest.json', json.dumps(report, ensure_ascii=False, indent=2).encode())
                 time.sleep(.3)
+        if archive:
+            archive.close()
         report['finished_at'] = now()
         store.atomic(store.root / 'backfill-latest.json', json.dumps(report, ensure_ascii=False, indent=2).encode())
         print(json.dumps({'finished': True, 'added': len(report['added']), 'failed': report['failed'],
