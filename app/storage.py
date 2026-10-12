@@ -75,7 +75,9 @@ class WebDAV:
 
     def read(self, name):
         chunks, size = [], 0
-        with self.client.stream('GET', self.url(name)) as r:
+        # WebDAV services may redirect downloads to a signed object-storage URL.
+        # HTTPX strips Authorization when a redirect crosses origins.
+        with self.client.stream('GET', self.url(name), follow_redirects=True) as r:
             r.raise_for_status()
             for chunk in r.iter_bytes():
                 size += len(chunk)

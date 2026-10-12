@@ -24,6 +24,22 @@
 
 密码留空保留旧密码。配置由 Fernet 加密落盘，密钥在 `data/.encryption-key`；数据目录和密钥必须一起备份。磁盘访问权限仍然是主要的主机安全边界。
 
+WebDAV 下载支持跳转到签名对象存储地址；跨域跳转不会携带 WebDAV 的 Authorization 凭据。
+
+## 补充历史壁纸
+
+历史索引来自 [npanuhin/Bing-Wallpaper-Archive](https://github.com/npanuhin/Bing-Wallpaper-Archive)。导入前先备份数据目录，检查计划，再追加缺少的日期：
+
+```sh
+docker compose exec wallpaper python -m app.backfill --start 2026-07-12 --end 2026-10-03 --source-date-offset=-1
+# 确认计划后执行；已存在的日期会跳过，可以中断后重试。
+docker compose exec wallpaper python -m app.backfill --start 2026-07-12 --end 2026-10-03 --source-date-offset=-1 --apply
+```
+
+当前站点沿用 Bing `startdate`，与该中文归档源的展示日期相差一天；工具通过已有图片 ID 交叉核对偏移，不匹配时拒绝导入。只处理最近 8 天采集窗口之前的数据，以避免与日常采集同时写入同一天。
+
+导入后在后台执行“立即采集与归档”，超过保留期的原图会按现有 WebDAV 配置迁移。导入进度保存在 `data/backfill-latest.json`。工具保留图片版权信息，限制请求速度，不覆盖已有图片或改动站点界面。
+
 ## API
 
 | 路径 | 用途 |

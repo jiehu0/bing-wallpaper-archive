@@ -95,6 +95,24 @@ def test_probe_reports_delete_failure(dav):
     assert any('清理失败' in step for step in result['steps'])
 
 
+def test_webdav_download_redirect_does_not_forward_credentials():
+    requests = []
+    def handle(request):
+        requests.append(request)
+        if request.url.host == 'dav.example':
+            assert request.headers.get('authorization', '').startswith('Basic ')
+            return httpx.Response(302, headers={'Location': 'https://objects.example/signed-image.jpg?token=fixture'})
+        assert 'authorization' not in request.headers
+        return httpx.Response(200, content=b'original-image')
+    cfg=storage.DEFAULTS | {'webdav_url':'https://dav.example/dav/', 'webdav_username':'test', 'webdav_password':'secret'}
+    dav=storage.WebDAV(cfg, transport=httpx.MockTransport(handle))
+    try:
+        assert dav.read('image.jpg') == b'original-image'
+        assert len(requests) == 2
+    finally:
+        dav.close()
+
+
 def test_encrypted_settings_and_password_preserved(store,dav):
     cfg,_,_,_=dav
     store.save_config(cfg)
