@@ -97,8 +97,9 @@ input[type=checkbox]{height:18px;width:18px;padding:0;accent-color:var(--accent)
 .api-item:hover,.api-item:focus-within{border-color:var(--accent)}
 .api-copy{flex:1;min-width:0;display:grid;grid-template-columns:1fr auto;gap:6px 10px;align-items:center;padding:12px 14px;border:0;background:none;font:inherit;font-size:13px;color:inherit;text-align:left;cursor:pointer}
 .api-copy code{grid-column:1/-1;color:var(--accent);word-break:break-all}
-.api-hint{font-size:12px;color:var(--muted)}
-.api-copy.copied .api-hint{color:var(--accent)}
+.api-icon{display:flex;color:var(--muted);transition:color .2s}
+.api-copy:hover .api-icon,.api-copy:focus-visible .api-icon,.api-copy.copied .api-icon{color:var(--accent)}
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
 .api-open{display:flex;align-items:center;padding:0 14px;border-left:1px solid var(--line);color:var(--muted)}
 .api-open:hover{color:var(--accent)}
 

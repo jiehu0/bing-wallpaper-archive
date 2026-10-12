@@ -61,13 +61,21 @@ async function copyText(text) {
 document.querySelectorAll('.api-copy').forEach(button => {
   const url = location.origin + button.dataset.path;
   button.querySelector('code').textContent = url;
-  const hint = button.querySelector('.api-hint');
+  const icon = button.querySelector('.api-icon');
+  const status = button.querySelector('.sr-only');
+  const copyIcon = icon.innerHTML;
+  // 复制成功后短暂显示对勾图标
+  const checkIcon = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>';
   let timer;
   button.addEventListener('click', async () => {
     const ok = await copyText(url);
-    hint.textContent = ok ? '已复制 ✓' : '复制失败，请手动选择';
+    status.textContent = ok ? '已复制' : '复制失败，请手动选择';
+    if (ok) icon.innerHTML = checkIcon;
     button.classList.toggle('copied', ok);
-    clearTimeout(timer); timer = setTimeout(() => {hint.textContent = '点击复制'; button.classList.remove('copied');}, 1600);
+    button.title = ok ? '已复制' : '复制失败';
+    clearTimeout(timer); timer = setTimeout(() => {
+      icon.innerHTML = copyIcon; status.textContent = ''; button.title = '复制链接'; button.classList.remove('copied');
+    }, 1600);
   });
 });
 load();

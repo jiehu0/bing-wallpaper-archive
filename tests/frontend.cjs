@@ -26,7 +26,7 @@ async function gallery() {
   assert.equal(copyButtons[1].querySelector('code').textContent,'https://wallpaper.boyweb.net/img/4k');
   copyButtons[1].click();await tick();
   assert.equal(copied,'https://wallpaper.boyweb.net/img/4k');
-  assert.equal(copyButtons[1].querySelector('.api-hint').textContent,'已复制 ✓');
+  assert.equal(copyButtons[1].querySelector('.sr-only').textContent,'已复制');assert.ok(copyButtons[1].classList.contains('copied'));
   w.document.getElementById('search').value='海岸';
   w.document.getElementById('filters').dispatchEvent(new w.Event('submit',{cancelable:true}));await tick();
   assert.ok(requests.at(-1).includes(encodeURIComponent('海岸')));
