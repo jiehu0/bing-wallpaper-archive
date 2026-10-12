@@ -1,5 +1,6 @@
 import hashlib
 import hmac
+import html
 import os
 import secrets
 import threading
@@ -9,7 +10,8 @@ from datetime import datetime
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse
+from urllib.parse import urlencode
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -242,8 +244,8 @@ def serve_image(row, variant, download=False, cache='public, max-age=86400'):
 
 @app.get('/img/')
 @app.get('/img/{mode}')
-def image_api(mode: str = 'today', date: str = Query('', pattern=r'^(\d{8}|\d{4}-\d{2}-\d{2})?$'),
-              type: str = 'image'):
+def image_api(request: Request, mode: str = 'today',
+              date: str = Query('', pattern=r'^(\d{8}|\d{4}-\d{2}-\d{2})?$'), type: str = 'image'):
     if mode not in ('today', '4k', '4K', 'rand') or type not in ('image', 'json'):
         raise HTTPException(400, '参数不正确')
     with store.db() as c:
@@ -259,10 +261,49 @@ def image_api(mode: str = 'today', date: str = Query('', pattern=r'^(\d{8}|\d{4}
         raise HTTPException(404, '该日期尚未收录')
     if type == 'json':
         return public_row(row)
+    # 浏览器直接打开 /img/rand 时返回带壁纸信息的页面；<img src> 引用或 curl 等仍返回图片本身。
+    if mode == 'rand' and is_navigation(request):
+        return rand_page(dict(row))
     # 直接返回图片内容，地址栏保持 /img/... 不变。
     # 今日图和随机图会变化，所以不缓存（带 date 的请求结果固定，可以缓存）。
     cache = 'public, max-age=86400' if date else 'no-store'
     return serve_image(dict(row), 'original' if mode.lower() == '4k' else 'preview', cache=cache)
+
+
+def is_navigation(request):
+    dest = request.headers.get('sec-fetch-dest')
+    if dest:
+        return dest == 'document'
+    # 不支持 Sec-Fetch 的旧浏览器：仅当 Accept 首选 HTML 时视为页面访问
+    return request.headers.get('accept', '').startswith('text/html')
+
+
+def rand_page(row):
+    e = lambda s: html.escape(str(s or ''), quote=True)
+    day = row['date']
+    # 页面里的图片用固定日期地址，避免再次随机拿到另一张
+    search = '/?' + urlencode({'q': row['title'], 'month': day[:7]})
+    source = row['copyright_link'] if str(row['copyright_link'] or '').startswith(('https://www.bing.com/', 'https://bing.com/')) else ''
+    source_link = f'<a class="outline-button" href="{e(source)}" target="_blank" rel="noopener noreferrer">在必应了解更多 ↗</a>' if source else ''
+    body = f'''<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{e(row['title'])} · 日序随机壁纸</title><link rel="stylesheet" href="/static/style.css?v=20261012f"></head>
+<body class="rand-page">
+<main class="rand-wrap">
+<img class="rand-image" src="/media/{e(day)}/preview" alt="{e(row['title'])}" width="{e(row['width'])}" height="{e(row['height'])}">
+<section class="rand-info">
+<p class="detail-date">{e(day)} · {e(row['width'])} × {e(row['height'])}</p>
+<h1>{e(row['title'])}</h1>
+<p class="rand-copyright">{e(row['copyright'])}</p>
+<div class="detail-actions">
+<a class="button" href="/media/{e(day)}/original?download=true" download>下载原图 ↓</a>
+<a class="outline-button" href="{e(search)}">在档案中查看</a>
+<a class="outline-button" href="/img/rand">换一张 ↻</a>
+{source_link}
+</div>
+</section>
+</main>
+</body></html>'''
+    return HTMLResponse(body, headers={'Cache-Control': 'no-store', 'Vary': 'Sec-Fetch-Dest, Accept'})
 
 
 @app.get('/healthz')

@@ -82,4 +82,8 @@ document.querySelectorAll('.api-copy').forEach(button => {
     }, 1600);
   });
 });
+// 支持从随机壁纸页跳转过来的 /?q=标题&month=YYYY-MM 预填筛选条件
+const initial = new URLSearchParams(location.search);
+$('search').value = initial.get('q') || '';
+if (/^\d{4}-\d{2}$/.test(initial.get('month') || '')) $('month').value = initial.get('month');
 load();

@@ -88,8 +88,13 @@ input[type=checkbox]{height:18px;width:18px;padding:0;accent-color:var(--accent)
 .pagination span{font-size:13px;color:#666}
 
 /* API */
-.api-dialog{width:min(680px,calc(100vw - 32px))}
-.api-dialog .api-section{padding:24px 22px 22px}
+.api-dialog{width:min(880px,calc(100vw - 32px))}
+.api-dialog .api-section{padding:32px 32px 30px}
+.api-dialog .api-head h2{font-size:22px}
+.api-dialog .api-head p{font-size:14px}
+.api-dialog .api-links{gap:14px;margin-top:22px}
+.api-dialog .api-copy{padding:16px 18px;font-size:14px}
+.api-dialog .api-copy code{font-size:14px}
 .api-dialog .api-head{padding-right:40px}
 .api-head h2{padding-left:10px;border-left:3px solid var(--accent);line-height:1.2}
 .api-head p{margin:10px 0 0;font-size:13px;color:#666}
@@ -121,6 +126,14 @@ dialog>img{display:block;width:100%;max-height:65vh;object-fit:contain;backgroun
 .detail-body h2{font-size:20px}
 #detail-copyright{margin:6px 0 0;font-size:13px;color:#666}
 .detail-actions{display:flex;flex-wrap:wrap;gap:12px;margin-top:16px}
+
+/* 随机壁纸页（/img/rand 浏览器访问） */
+body.rand-page{background:#20262b}
+.rand-wrap{max-width:1200px;margin:24px auto;padding:0 16px}
+.rand-image{display:block;width:100%;height:auto;max-height:78vh;object-fit:contain;border-radius:10px 10px 0 0;background:#111}
+.rand-info{padding:20px 24px 24px;border-radius:0 0 10px 10px;background:#fff}
+.rand-info h1{margin:0;font-size:22px;font-weight:600}
+.rand-copyright{margin:6px 0 0;font-size:13px;color:#666}
 
 /* 管理后台 */
 .eyebrow{margin:0 0 8px;font-size:12px;letter-spacing:1px;color:var(--muted)}

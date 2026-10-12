@@ -156,6 +156,13 @@ def test_api_auth_filters_and_image_integrity(tmp_path,monkeypatch):
         assert r.status_code==200 and r.headers['content-type']=='image/jpeg' and r.headers['cache-control']=='no-store'
         r=client.get('/img/rand',follow_redirects=False)
         assert r.status_code==200 and r.headers['content-type']=='image/webp'
+        r=client.get('/img/rand',headers={'sec-fetch-dest':'image','accept':'text/html'})
+        assert r.headers['content-type']=='image/webp'
+        r=client.get('/img/rand',headers={'sec-fetch-dest':'document'})
+        assert r.status_code==200 and r.headers['content-type'].startswith('text/html') and r.headers['cache-control']=='no-store'
+        assert '/media/2026-10-12/preview' in r.text and '/media/2026-10-12/original?download=true' in r.text and '<script' not in r.text
+        r=client.get('/img/rand',headers={'accept':'text/html,application/xhtml+xml'})
+        assert r.headers['content-type'].startswith('text/html')
         r=client.get('/img/',follow_redirects=False)
         assert r.status_code==200 and r.headers['content-type']=='image/webp'
         assert client.post('/api/admin/webdav/test',json={'webdav_url':'bad'}).json()['ok'] is False
