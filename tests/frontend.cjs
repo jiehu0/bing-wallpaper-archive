@@ -20,6 +20,13 @@ async function gallery() {
   assert.equal(w.document.getElementById('detail').open,true);
   assert.ok(w.document.getElementById('download').href.endsWith('/original?download=true'));
   w.document.getElementById('close-dialog').click();assert.equal(w.document.getElementById('detail').open,false);
+  let copied=null;Object.defineProperty(w.navigator,'clipboard',{value:{writeText:async t=>{copied=t;}},configurable:true});
+  const copyButtons=w.document.querySelectorAll('.api-copy');
+  assert.equal(copyButtons.length,4);
+  assert.equal(copyButtons[1].querySelector('code').textContent,'https://wallpaper.boyweb.net/img/4k');
+  copyButtons[1].click();await tick();
+  assert.equal(copied,'https://wallpaper.boyweb.net/img/4k');
+  assert.equal(copyButtons[1].querySelector('.api-hint').textContent,'已复制 ✓');
   w.document.getElementById('search').value='海岸';
   w.document.getElementById('filters').dispatchEvent(new w.Event('submit',{cancelable:true}));await tick();
   assert.ok(requests.at(-1).includes(encodeURIComponent('海岸')));

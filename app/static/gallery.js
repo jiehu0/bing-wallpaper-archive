@@ -51,4 +51,23 @@ $('toggle-search').addEventListener('click', () => {$('filters').scrollIntoView(
 $('hero-open').addEventListener('click', () => latest && openDetail(latest));
 $('close-dialog').addEventListener('click', () => $('detail').close());
 $('detail').addEventListener('click', e => {if (e.target === $('detail')) $('detail').close();});
+async function copyText(text) {
+  try { await navigator.clipboard.writeText(text); return true; } catch {}
+  // 非安全上下文或旧浏览器的回退方案
+  const area = document.createElement('textarea'); area.value = text; area.setAttribute('readonly', '');
+  area.style.position = 'fixed'; area.style.opacity = '0'; document.body.append(area); area.select();
+  let ok = false; try { ok = document.execCommand('copy'); } catch {} area.remove(); return ok;
+}
+document.querySelectorAll('.api-copy').forEach(button => {
+  const url = location.origin + button.dataset.path;
+  button.querySelector('code').textContent = url;
+  const hint = button.querySelector('.api-hint');
+  let timer;
+  button.addEventListener('click', async () => {
+    const ok = await copyText(url);
+    hint.textContent = ok ? '已复制 ✓' : '复制失败，请手动选择';
+    button.classList.toggle('copied', ok);
+    clearTimeout(timer); timer = setTimeout(() => {hint.textContent = '点击复制'; button.classList.remove('copied');}, 1600);
+  });
+});
 load();
