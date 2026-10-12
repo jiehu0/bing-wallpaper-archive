@@ -286,7 +286,7 @@ def rand_page(row):
     source = row['copyright_link'] if str(row['copyright_link'] or '').startswith(('https://www.bing.com/', 'https://bing.com/')) else ''
     source_link = f'<a class="outline-button" href="{e(source)}" target="_blank" rel="noopener noreferrer">在必应了解更多 ↗</a>' if source else ''
     body = f'''<!doctype html>
-<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{e(row['title'])} · 日序随机壁纸</title><link rel="stylesheet" href="/static/style.css?v=20261012g"></head>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{e(row['title'])} · 日序随机壁纸</title><link rel="icon" href="/static/bing.svg?v=20261012h" type="image/svg+xml"><link rel="stylesheet" href="/static/style.css?v=20261012h"></head>
 <body class="rand-page">
 <main class="rand-wrap">
 <img class="rand-image" src="/media/{e(day)}/preview" alt="{e(row['title'])}" width="{e(row['width'])}" height="{e(row['height'])}">

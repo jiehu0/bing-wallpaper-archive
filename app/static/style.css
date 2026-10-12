@@ -21,7 +21,7 @@ body.home{background:#20262b}
 .topbar{position:sticky;top:0;z-index:10;min-height:54px;display:flex;align-items:center;justify-content:space-between;gap:16px;padding:0 max(16px,calc((100% - 1200px)/2));background:linear-gradient(to right,#ffecea,#c4e7f7,#ffecea,#c4e7f7,#ffecea);color:#555;box-shadow:0 1px 6px rgba(0,0,0,.08)}
 .topbar-inner{width:100%;display:flex;align-items:center;justify-content:space-between;gap:16px}
 .brand{display:inline-flex;align-items:center;gap:8px;font-size:20px;font-weight:600;color:#333;white-space:nowrap}
-.brand-icon{font-size:24px;color:var(--accent)}
+.brand-icon{display:block;width:26px;height:26px;flex:none}
 .brand-sub{font-size:13px;font-weight:400;color:#777}
 nav{display:flex;gap:8px}
 .pill{display:inline-flex;align-items:center;height:30px;padding:0 14px;border:0;border-radius:15px;background:var(--accent);color:#fff;font-size:13px;white-space:nowrap;transition:opacity .2s}
