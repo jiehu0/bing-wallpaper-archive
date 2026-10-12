@@ -152,7 +152,12 @@ def test_api_auth_filters_and_image_integrity(tmp_path,monkeypatch):
         assert client.get('/media/2026-10-12/original?download=true').headers['content-disposition'].startswith('attachment')
         assert client.get('/img/?date=20260230').status_code==400
         assert client.get('/img/?type=json').json()['date']=='2026-10-12'
-        assert client.get('/img/4k',follow_redirects=False).status_code==307
+        r=client.get('/img/4k',follow_redirects=False)
+        assert r.status_code==200 and r.headers['content-type']=='image/jpeg' and r.headers['cache-control']=='no-store'
+        r=client.get('/img/rand',follow_redirects=False)
+        assert r.status_code==200 and r.headers['content-type']=='image/webp'
+        r=client.get('/img/',follow_redirects=False)
+        assert r.status_code==200 and r.headers['content-type']=='image/webp'
         assert client.post('/api/admin/webdav/test',json={'webdav_url':'bad'}).json()['ok'] is False
         assert client.post('/api/admin/logout').status_code==200
         assert client.get('/api/admin/settings').status_code==401

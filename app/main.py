@@ -9,7 +9,7 @@ from datetime import datetime
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -208,10 +208,15 @@ def media(day: str, variant: str, download: bool = False):
     row = find_wallpaper(day)
     if variant not in ('thumb', 'preview', 'original'):
         raise HTTPException(404)
+    return serve_image(row, variant, download)
+
+
+def serve_image(row, variant, download=False, cache='public, max-age=86400'):
+    day = row['date']
     folder = {'thumb': 'thumbs', 'preview': 'previews', 'original': 'originals'}[variant]
     suffix = '.jpg' if variant == 'original' else '.webp'
     path = store.root / folder / (day + suffix)
-    headers = {'Cache-Control': 'public, max-age=86400', 'ETag': '"' + row['sha256'] + '-' + variant + '"'}
+    headers = {'Cache-Control': cache, 'ETag': '"' + row['sha256'] + '-' + variant + '"'}
     if download:
         headers['Content-Disposition'] = 'attachment; filename="bing-' + day + suffix + '"'
     if path.exists():
@@ -254,9 +259,10 @@ def image_api(mode: str = 'today', date: str = Query('', pattern=r'^(\d{8}|\d{4}
         raise HTTPException(404, '该日期尚未收录')
     if type == 'json':
         return public_row(row)
-    # No permanent redirect: today's and random images change over time.
-    return RedirectResponse('/media/' + row['date'] + ('/original' if mode.lower() == '4k' else '/preview'),
-                            status_code=307, headers={'Cache-Control': 'no-store'})
+    # 直接返回图片内容，地址栏保持 /img/... 不变。
+    # 今日图和随机图会变化，所以不缓存（带 date 的请求结果固定，可以缓存）。
+    cache = 'public, max-age=86400' if date else 'no-store'
+    return serve_image(dict(row), 'original' if mode.lower() == '4k' else 'preview', cache=cache)
 
 
 @app.get('/healthz')
