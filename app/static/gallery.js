@@ -33,6 +33,7 @@ async function load() {
     latest = data.latest;
     if (latest) {
       $('hero').hidden = false; $('hero-image').src = latest.preview; $('hero-image').alt = latest.title;
+      $('page-bg').style.backgroundImage = `url("${encodeURI(latest.preview)}")`;
       $('hero-title').textContent = latest.title; $('hero-date').textContent = latest.date;
       $('hero-copyright').textContent = latest.copyright;
     }
@@ -46,6 +47,7 @@ $('filters').addEventListener('submit', event => {event.preventDefault(); page =
 $('reset').addEventListener('click', () => {$('search').value = ''; $('month').value = ''; page = 1; load();});
 $('previous').addEventListener('click', () => {page--; load(); $('archive').scrollIntoView();});
 $('next').addEventListener('click', () => {page++; load(); $('archive').scrollIntoView();});
+$('toggle-search').addEventListener('click', () => {$('filters').scrollIntoView({block: 'center'}); $('search').focus({preventScroll: true});});
 $('hero-open').addEventListener('click', () => latest && openDetail(latest));
 $('close-dialog').addEventListener('click', () => $('detail').close());
 $('detail').addEventListener('click', e => {if (e.target === $('detail')) $('detail').close();});
