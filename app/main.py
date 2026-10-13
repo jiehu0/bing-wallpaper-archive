@@ -173,15 +173,28 @@ def public_row(row):
 
 
 @app.get('/api/wallpapers')
-def wallpapers(q: str = Query('', max_length=100), month: str = Query('', pattern=r'^(\d{4}-\d{2})?$'),
+def wallpapers(q: str = Query('', max_length=100),
+               month: str = Query('', pattern=r'^(\d{4}-)?(0[1-9]|1[0-2])$|^$'),
+               year: str = Query('', pattern=r'^([1-9]\d{3})?$'),
+               day: str = Query('', pattern=r'^(0[1-9]|[12]\d|3[01])?$'),
                page: int = Query(1, ge=1), per_page: int = Query(18, ge=1, le=60)):
     where, args = [], []
     if q:
         where.append('(title LIKE ? OR copyright LIKE ?)')
         args.extend(['%' + q + '%'] * 2)
     if month:
+        if '-' in month:  # 兼容原有 month=YYYY-MM 链接
+            where.append('date LIKE ?')
+            args.append(month + '%')
+        else:
+            where.append('substr(date, 6, 2) = ?')
+            args.append(month)
+    if year:
         where.append('date LIKE ?')
-        args.append(month + '%')
+        args.append(year + '-%')
+    if day:
+        where.append('substr(date, 9, 2) = ?')
+        args.append(day)
     sql = ' WHERE ' + ' AND '.join(where) if where else ''
     with store.db() as c:
         total = c.execute('SELECT COUNT(*) FROM wallpapers' + sql, args).fetchone()[0]
@@ -189,8 +202,9 @@ def wallpapers(q: str = Query('', max_length=100), month: str = Query('', patter
                          args + [per_page, (page - 1) * per_page]).fetchall()
         latest = c.execute('SELECT * FROM wallpapers ORDER BY date DESC LIMIT 1').fetchone()
         count = c.execute('SELECT COUNT(*) FROM wallpapers').fetchone()[0]
+        years = [r[0] for r in c.execute('SELECT DISTINCT substr(date, 1, 4) AS year FROM wallpapers ORDER BY year DESC')]
     return {'items': [public_row(r) for r in rows], 'total': total, 'page': page,
-            'archive_count': count, 'latest': public_row(latest) if latest else None}
+            'archive_count': count, 'years': years, 'latest': public_row(latest) if latest else None}
 
 
 def find_wallpaper(day):

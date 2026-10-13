@@ -306,3 +306,38 @@ def test_webdav_creates_year_and_month_once_and_rejects_failed_creation():
         assert '2027' not in dav.collections
     finally:
         dav.close()
+
+
+def test_independent_date_filters(tmp_path, monkeypatch):
+    monkeypatch.setenv('DATA_DIR', str(tmp_path))
+    monkeypatch.setenv('SCHEDULER_ENABLED', '0')
+    from app import main
+    from fastapi.testclient import TestClient
+    monkeypatch.setattr(main, 'store', storage.Store(tmp_path))
+    days = ['2024-02-29', '2024-10-12', '2025-10-11', '2026-09-12', '2026-10-12']
+    for day in days:
+        add(main.store, day)
+    with TestClient(main.app) as client:
+        cases = [
+            ({'year': '2024'}, ['2024-10-12', '2024-02-29']),
+            ({'month': '10'}, ['2026-10-12', '2025-10-11', '2024-10-12']),
+            ({'day': '12'}, ['2026-10-12', '2026-09-12', '2024-10-12']),
+            ({'year': '2026', 'month': '10', 'day': '12'}, ['2026-10-12']),
+            ({'year': '2024', 'month': '02', 'day': '29'}, ['2024-02-29']),
+            ({'year': '2025', 'month': '02', 'day': '29'}, []),
+            ({'month': '2024-10'}, ['2024-10-12']),
+            ({'year': '2026', 'q': '没有这个关键词'}, []),
+            ({'year': '2026', 'per_page': 1, 'page': 2}, ['2026-09-12']),
+            ({}, sorted(days, reverse=True)),
+        ]
+        for params, expected in cases:
+            response = client.get('/api/wallpapers', params=params)
+            assert response.status_code == 200
+            data = response.json()
+            assert [item['date'] for item in data['items']] == expected
+            assert data['total'] == (2 if params.get('page') == 2 else len(expected))
+            assert data['years'] == ['2026', '2025', '2024']
+            assert data['archive_count'] == 5
+            assert data['latest']['date'] == '2026-10-12'
+        for params in [{'month': '13'}, {'month': '2026-00'}, {'day': '32'}, {'year': 'bad'}]:
+            assert client.get('/api/wallpapers', params=params).status_code == 422

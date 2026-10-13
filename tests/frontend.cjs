@@ -5,13 +5,24 @@ const path = require('node:path');
 const root = path.join(__dirname, '../app/static');
 const tick = () => new Promise(resolve => setTimeout(resolve, 20));
 const wallpaper = {date:'2026-10-11',title:'海岸 <script>bad()</script>',copyright:'摄影师版权',copyright_link:'https://www.bing.com/search?q=test',width:3840,height:2160,thumbnail:'/media/2026-10-11/thumb',preview:'/media/2026-10-11/preview',original:'/media/2026-10-11/original'};
-async function gallery() {
-  const dom = new JSDOM(fs.readFileSync(path.join(root,'index.html'),'utf8'), {url:'https://wallpaper.boyweb.net',runScripts:'outside-only'});
+async function gallery(query='') {
+  const dom = new JSDOM(fs.readFileSync(path.join(root,'index.html'),'utf8'), {url:'https://wallpaper.boyweb.net/'+query,runScripts:'outside-only'});
   const w = dom.window, requests=[];
   w.HTMLDialogElement.prototype.showModal=function(){this.open=true;};
   w.HTMLDialogElement.prototype.close=function(){this.open=false;};
-  w.fetch=async url=>{requests.push(String(url));return {ok:true,json:async()=>({items:[wallpaper],latest:wallpaper,total:1,archive_count:1})};};
+  w.fetch=async url=>{requests.push(String(url));return {ok:true,json:async()=>({items:[wallpaper],latest:wallpaper,total:36,archive_count:36,years:['2026','2024']})};};
   w.eval(fs.readFileSync(path.join(root,'gallery.js'),'utf8'));await tick();
+  const field=id=>w.document.getElementById(id);
+  const params=()=>new URL(requests.at(-1),'https://wallpaper.boyweb.net').searchParams;
+  const select=async(id,value)=>{field(id).value=value;field(id).dispatchEvent(new w.Event('change'));await tick();};
+  if(query) {
+    assert.equal(field('year').value,'2024');
+    assert.equal(field('month').value,'02');
+    assert.equal(params().get('year'),'2024');
+    assert.equal(params().get('month'),'02');
+    assert.equal(field('day').value,query.includes('day=')?'29':'');
+    dom.window.close();return;
+  }
   assert.equal(w.document.querySelectorAll('.card').length,1);
   assert.equal(w.document.getElementById('hero').hidden,false);
   assert.equal(w.document.querySelector('.card h3').textContent,wallpaper.title);
@@ -35,6 +46,23 @@ async function gallery() {
   w.document.getElementById('search').value='海岸';
   w.document.getElementById('filters').dispatchEvent(new w.Event('submit',{cancelable:true}));await tick();
   assert.ok(requests.at(-1).includes(encodeURIComponent('海岸')));
+  w.HTMLElement.prototype.scrollIntoView=function(){};
+  field('next').click();await tick();assert.equal(params().get('page'),'2');
+  await select('year','2024');assert.equal(params().get('page'),'1');
+  await select('month','02');
+  assert.equal(field('day').options.length,30,'Leap February includes 29 days and a placeholder');
+  await select('day','29');
+  assert.equal(params().get('year'),'2024');assert.equal(params().get('month'),'02');assert.equal(params().get('day'),'29');
+  assert.equal(params().get('q'),'海岸');
+  await select('year','2026');
+  assert.equal(field('day').options.length,29);assert.equal(params().get('day'),'','Invalid day clears after changing year');
+  await select('month','01');await select('day','31');await select('month','04');
+  assert.equal(params().get('day'),'');assert.equal(field('day').options.length,31);
+  await select('year','');assert.equal(params().get('month'),'04','Month can filter across years');
+  await select('month','');await select('day','12');assert.equal(params().get('day'),'12','Day can filter across months');
+  field('reset').click();await tick();
+  for(const id of ['q','year','month','day'])assert.equal(params().get(id),'');
+  assert.equal(field('day').options.length,32);
   dom.window.close();
 }
 async function admin() {
@@ -64,4 +92,4 @@ async function admin() {
   assert.equal(w.document.getElementById('webdav_password').value,'');
   dom.window.close();
 }
-(async()=>{await gallery();await admin();console.log('Frontend DOM checks passed: gallery, filters, preview, download, WebDAV test, save, secret clearing.');})().catch(e=>{console.error(e);process.exit(1);});
+(async()=>{await gallery();await gallery('?q=海岸&month=2024-02');await gallery('?year=2024&month=02&day=29');await admin();console.log('Frontend DOM checks passed: gallery, date filters, legacy links, preview, download, WebDAV test, save, secret clearing.');})().catch(e=>{console.error(e);process.exit(1);});

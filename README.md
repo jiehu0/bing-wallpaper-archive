@@ -1,6 +1,6 @@
 # 日序 · 必应壁纸档案
 
-独立部署在 BERO 的壁纸归档站。公开画廊、月份筛选、关键词搜索、大图预览、原图下载、每日/随机图片接口，以及管理员 WebDAV 设置与测试。
+独立部署在 BERO 的壁纸归档站。公开画廊、年/月/日筛选、关键词搜索、大图预览、原图下载、每日/随机图片接口，以及管理员 WebDAV 设置与测试。
 
 线上地址：<https://wallpaper.boyweb.net/>；管理地址：<https://wallpaper.boyweb.net/admin/>。
 
@@ -55,7 +55,7 @@ docker compose exec wallpaper python -m app.backfill --release-zip /tmp/2023.zip
 
 | 路径 | 用途 |
 | --- | --- |
-| `/api/wallpapers?q=&month=2026-10&page=1` | 分页检索 |
+| `/api/wallpapers?q=&year=2026&month=10&day=12&page=1` | 分页检索；年、月、日可单独或组合使用，兼容 `month=2026-10` |
 | `/img/` | 最新预览图，临时重定向 |
 | `/img/4k` | 最新原图 |
 | `/img/rand` | 随机已归档壁纸 |
